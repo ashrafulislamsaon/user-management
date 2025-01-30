@@ -30,12 +30,12 @@ function delete_unverified_users_function() {
     foreach ($sites as $site) {
         switch_to_blog($site->blog_id);
         
-        // Get unverified users
+        // Get unverified users - using 0 for false boolean value
         $unverified_users = $wpdb->get_col(
             $wpdb->prepare(
                 "SELECT ID FROM {$wpdb->users} 
-                WHERE email_verified = %s",
-                'false'
+                WHERE email_verified = %d",
+                0
             )
         );
         
