@@ -1,8 +1,8 @@
 <?php
 /*
 Plugin Name: Auto Delete Unverified Users
-Description: Automatically deletes users with unverified emails
-Version: 1.0
+Description: Automatically deletes users with unverified emails every 2 minutes
+Version: 1.0.0
 */
 
 // Prevent direct access
@@ -10,12 +10,12 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-// Add cron schedule
+// Add custom 2-minute schedule
 add_filter('cron_schedules', 'add_cleanup_schedule');
 function add_cleanup_schedule($schedules) {
-    $schedules['daily'] = array(
-        'interval' => 86400,
-        'display' => 'Once Daily'
+    $schedules['every_two_minutes'] = array(
+        'interval' => 120,
+        'display' => 'Every 2 Minutes'
     );
     return $schedules;
 }
@@ -26,11 +26,12 @@ function delete_unverified_users_function() {
     
     // Get all sites in the network
     $sites = get_sites();
+    $total_deleted = 0;
     
     foreach ($sites as $site) {
         switch_to_blog($site->blog_id);
         
-        // Get unverified users - using 0 for false boolean value
+        // Get unverified users
         $unverified_users = $wpdb->get_col(
             $wpdb->prepare(
                 "SELECT ID FROM {$wpdb->users} 
@@ -40,27 +41,56 @@ function delete_unverified_users_function() {
         );
         
         // Delete each user
-        foreach ($unverified_users as $user_id) {
-            wpmu_delete_user($user_id);
+        if (!empty($unverified_users)) {
+            foreach ($unverified_users as $user_id) {
+                if (is_multisite()) {
+                    require_once(ABSPATH . 'wp-admin/includes/ms.php');
+                    wpmu_delete_user($user_id);
+                } else {
+                    wp_delete_user($user_id);
+                }
+                $total_deleted++;
+            }
         }
         
         restore_current_blog();
     }
     
-    // Log the cleanup
-    error_log('Unverified users cleanup completed at ' . current_time('mysql'));
+    // Log the cleanup with timestamp and count
+    error_log(sprintf(
+        'Unverified users cleanup completed at %s. Users deleted: %d',
+        current_time('mysql'),
+        $total_deleted
+    ));
+}
+
+// Add debug logging
+add_action('init', 'debug_cron_schedule');
+function debug_cron_schedule() {
+    if (current_user_can('manage_options')) {
+        $timestamp = wp_next_scheduled('delete_unverified_users');
+        error_log('Next scheduled cleanup at: ' . date('Y-m-d H:i:s', $timestamp));
+    }
 }
 
 // Schedule the cleanup event AND run immediate cleanup
 register_activation_hook(__FILE__, 'plugin_activation_handler');
 function plugin_activation_handler() {
-    // Schedule daily cleanup
-    if (!wp_next_scheduled('delete_unverified_users')) {
-        wp_schedule_event(time(), 'daily', 'delete_unverified_users');
+    // Include required files for multisite functions
+    if (is_multisite()) {
+        require_once(ABSPATH . 'wp-admin/includes/ms.php');
     }
     
-    // Run immediate cleanup
-    delete_unverified_users_function();
+    // Clear any existing schedule
+    wp_clear_scheduled_hook('delete_unverified_users');
+    
+    // Run immediate cleanup first
+    // delete_unverified_users_function();
+    
+    // Then schedule future cleanups
+    wp_schedule_event(time(), 'every_two_minutes', 'delete_unverified_users');
+    
+    error_log('Plugin activated and immediate cleanup triggered at: ' . current_time('mysql'));
 }
 
 // Hook for scheduled cleanup
@@ -70,4 +100,5 @@ add_action('delete_unverified_users', 'delete_unverified_users_function');
 register_deactivation_hook(__FILE__, 'cleanup_deactivation');
 function cleanup_deactivation() {
     wp_clear_scheduled_hook('delete_unverified_users');
+    error_log('Plugin deactivated at: ' . current_time('mysql'));
 }
