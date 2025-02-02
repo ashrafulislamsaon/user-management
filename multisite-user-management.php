@@ -2,7 +2,7 @@
 /*
 Plugin Name: Auto Delete Unverified Users
 Description: Automatically deletes users with unverified emails every 2 minutes
-Version: 1.0.0
+Version: 1.0.1
 */
 
 // Prevent direct access
@@ -73,7 +73,7 @@ function debug_cron_schedule() {
     }
 }
 
-// Schedule the cleanup event AND run immediate cleanup
+// Schedule the cleanup event
 register_activation_hook(__FILE__, 'plugin_activation_handler');
 function plugin_activation_handler() {
     // Include required files for multisite functions
@@ -84,13 +84,11 @@ function plugin_activation_handler() {
     // Clear any existing schedule
     wp_clear_scheduled_hook('delete_unverified_users');
     
-    // Run immediate cleanup first
-    // delete_unverified_users_function();
+    // Schedule first run to occur after 2 minutes
+    $first_run = time() + 120; // Current time + 2 minutes
+    wp_schedule_event($first_run, 'every_two_minutes', 'delete_unverified_users');
     
-    // Then schedule future cleanups
-    wp_schedule_event(time(), 'every_two_minutes', 'delete_unverified_users');
-    
-    error_log('Plugin activated and immediate cleanup triggered at: ' . current_time('mysql'));
+    error_log('Plugin activated at: ' . current_time('mysql') . '. First cleanup scheduled for: ' . date('Y-m-d H:i:s', $first_run));
 }
 
 // Hook for scheduled cleanup
